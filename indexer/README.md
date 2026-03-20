@@ -31,6 +31,8 @@ docker compose down -v
 
 ## 2. Install Python dependencies
 
+Use **Python 3.11.15** (`python --version`). Other **3.11.x** releases should work as well.
+
 ```bash
 pip install pysolr pandas requests
 ```
