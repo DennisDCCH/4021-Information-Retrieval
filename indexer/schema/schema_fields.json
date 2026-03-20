@@ -1,0 +1,137 @@
+[
+  {
+    "op": "add-field",
+    "payload": {
+      "name": "movie_id",
+      "type": "string",
+      "stored": true,
+      "indexed": true,
+      "docValues": true
+    }
+  },
+  {
+    "op": "add-field",
+    "payload": {
+      "name": "movie_title",
+      "type": "string",
+      "stored": true,
+      "indexed": true,
+      "docValues": true
+    }
+  },
+  {
+    "op": "add-field",
+    "payload": {
+      "name": "movie_title_t",
+      "type": "text_en",
+      "stored": false,
+      "indexed": true
+    }
+  },
+  {
+    "op": "add-copy-field",
+    "payload": {
+      "source": "movie_title",
+      "dest": "movie_title_t"
+    }
+  },
+  {
+    "op": "add-field",
+    "payload": {
+      "name": "author",
+      "type": "string",
+      "stored": true,
+      "indexed": true,
+      "docValues": true
+    }
+  },
+  {
+    "op": "add-field",
+    "payload": {
+      "name": "author_rating",
+      "type": "pfloat",
+      "stored": true,
+      "indexed": true,
+      "docValues": true
+    }
+  },
+  {
+    "op": "add-field",
+    "payload": {
+      "name": "upvotes",
+      "type": "pint",
+      "stored": true,
+      "indexed": true,
+      "docValues": true
+    }
+  },
+  {
+    "op": "add-field",
+    "payload": {
+      "name": "downvotes",
+      "type": "pint",
+      "stored": true,
+      "indexed": true,
+      "docValues": true
+    }
+  },
+  {
+    "op": "add-field",
+    "payload": {
+      "name": "helpfulness_score",
+      "type": "pfloat",
+      "stored": true,
+      "indexed": true,
+      "docValues": true
+    }
+  },
+  {
+    "op": "add-field",
+    "payload": {
+      "name": "submission_date",
+      "type": "pdate",
+      "stored": true,
+      "indexed": true,
+      "docValues": true
+    }
+  },
+  {
+    "op": "add-field",
+    "payload": {
+      "name": "year",
+      "type": "pint",
+      "stored": true,
+      "indexed": true,
+      "docValues": true
+    }
+  },
+  {
+    "op": "add-field",
+    "payload": {
+      "name": "summary",
+      "type": "text_en",
+      "stored": true,
+      "indexed": true
+    }
+  },
+  {
+    "op": "add-field",
+    "payload": {
+      "name": "content",
+      "type": "text_en",
+      "stored": true,
+      "indexed": true
+    }
+  },
+  {
+    "op": "add-field",
+    "payload": {
+      "name": "sentiment",
+      "type": "string",
+      "stored": true,
+      "indexed": true,
+      "docValues": true
+    }
+  }
+]
+
