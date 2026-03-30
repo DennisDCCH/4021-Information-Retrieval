@@ -121,7 +121,7 @@ dummy_scores.plot(kind='bar', ax=axes[1], title='DummyClassifier', color=['#7a3b
 for ax in axes:
     ax.set_xticklabels(labels, rotation=0)
     ax.set_ylim(0, 1)
-    ax.legend(loc='lower right')
+    ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1))
 fig3.suptitle('Comparison of ML Model vs. DummyClassifier', fontsize=18, weight='bold')
 plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 plt.savefig(os.path.join(BASE_DIR, 'results', 'ml_vs_dummy_comparison.png'), bbox_inches='tight', dpi=200)
@@ -161,9 +161,10 @@ plt.tight_layout()
 plt.savefig(os.path.join(BASE_DIR, 'results', 'ml_polarity_detection_report.png'), bbox_inches='tight', dpi=200)
 plt.close(fig)
 
+
 # save model
-joblib.dump(vec_pol, 'results/tfidf_polarity.joblib')
-joblib.dump(clf_pol, 'results/model_polarity.joblib')
+joblib.dump(vec_pol, os.path.join(BASE_DIR, 'results', 'tfidf_polarity.joblib'))
+joblib.dump(clf_pol, os.path.join(BASE_DIR, 'results', 'model_polarity.joblib'))
 
 # ML-based sentiment prediction
 corpus = pd.read_csv(CORPUS_PATH)
@@ -188,8 +189,19 @@ corpus['polarity_ml'] = corpus['polarity_ml'].map({
     0: 'NEGATIVE'
 })
 
-# save output
-corpus.to_csv('results/corpus_with_sentiment.csv', index=False)
+# Random Accuracy Test on the rest of the dataset
+# DummyClassifier prediction on full corpus
+dummy_preds_corpus = dummy_clf.predict(vec_pol.transform(corpus['processed_text']))
+dummy_preds_corpus = pd.Series(dummy_preds_corpus).map({1: 'POSITIVE', 0: 'NEGATIVE'})
+
+print("\n--- Prediction Distribution on the rest of the dataset ---")
+print("ML Model prediction distribution:")
+print(corpus['polarity_ml'].value_counts())
+print("\nDummyClassifier (Random) prediction distribution:")
+print(dummy_preds_corpus.value_counts())
+
+ # save output
+corpus.to_csv(os.path.join(BASE_DIR, 'results', 'corpus_with_sentiment.csv'), index=False)
 print(f"\nClassification complete! {num_records} records classified in {elapsed:.2f} seconds.")
 print(f"Records classified per second: {records_per_sec:.2f}")
 
