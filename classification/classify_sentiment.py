@@ -7,7 +7,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report
 import matplotlib.pyplot as plt
-import numpy as np
+import numpy as npm
+import time
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EVAL_PATH = os.path.join(BASE_DIR, 'evaluation', 'evaluation_dataset.xlsx')
@@ -37,7 +39,7 @@ df_pol = eval_df[eval_df['polarity'] != 2]
 
 
 print("Evaluation dataset size:", len(df_pol))
-# Show polarity distribution with clear labels
+# show polarity distribution with clear labels
 label_map = {1: 'POSITIVE', 0: 'NEGATIVE'}
 gt_counts = df_pol['polarity'].map(label_map).value_counts()
 print("Ground Truth Polarity Distribution:")
@@ -61,14 +63,14 @@ clf_pol.fit(X_train_vec_pol, y_train_pol)
 # evaluate
 X_test_vec_pol = vec_pol.transform(X_test_pol)
 
-# Print ML Polarity Detection Report
+# print ML Polarity Detection Report
 ml_report = classification_report(y_test_pol, clf_pol.predict(X_test_vec_pol), digits=3, output_dict=True)
 ml_report_df = pd.DataFrame(ml_report).transpose()
 ml_report_df = ml_report_df.rename(index={'0': 'NEGATIVE', '1': 'POSITIVE'})
 print("\nML Polarity Detection Report:")
 print(ml_report_df.to_string(float_format="{:.2f}".format))
 
-# DummyClassifier random baseline report
+# dummyClassifier random baseline report
 dummy_clf = DummyClassifier(strategy='uniform', random_state=99)
 dummy_clf.fit(X_train_vec_pol, y_train_pol)
 dummy_preds = dummy_clf.predict(X_test_vec_pol)
@@ -78,7 +80,7 @@ dummy_report_df = dummy_report_df.rename(index={'0': 'NEGATIVE', '1': 'POSITIVE'
 print("\nDummyClassifier (Random) Baseline Report:")
 print(dummy_report_df.to_string(float_format="{:.2f}".format))
 
-# Save DummyClassifier report as styled table image
+# save DummyClassifier report as styled table image
 fig2, ax2 = plt.subplots(figsize=(10, 3.5))
 ax2.axis('off')
 tbl2 = ax2.table(
@@ -107,7 +109,7 @@ plt.tight_layout()
 plt.savefig(os.path.join(BASE_DIR, 'results', 'dummy_classifier_report.png'), bbox_inches='tight', dpi=200)
 plt.close(fig2)
 
-# Side-by-side comparison plot for both reports 
+# side-by-side comparison plot for both reports 
 metrics = ['precision', 'recall', 'f1-score']
 labels = ['NEGATIVE', 'POSITIVE']
 ml_scores = ml_report_df.loc[labels, metrics].astype(float)
@@ -125,12 +127,11 @@ plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 plt.savefig(os.path.join(BASE_DIR, 'results', 'ml_vs_dummy_comparison.png'), bbox_inches='tight', dpi=200)
 plt.close(fig3)
 
-# Comparison summary
 print("\nComparison of ML Model vs. DummyClassifier (Random Baseline):")
 print("ML Model Accuracy: {:.2f}".format(ml_report['accuracy']))
 print("DummyClassifier Accuracy: {:.2f}".format(dummy_report['accuracy']))
 
-# Save the report as a styled table image with improved design
+# save the report as a styled table image
 fig, ax = plt.subplots(figsize=(10, 3.5))
 ax.axis('off')
 tbl = ax.table(
@@ -164,15 +165,23 @@ plt.close(fig)
 joblib.dump(vec_pol, 'results/tfidf_polarity.joblib')
 joblib.dump(clf_pol, 'results/model_polarity.joblib')
 
-# Only ML-based sentiment prediction
+# ML-based sentiment prediction
 corpus = pd.read_csv(CORPUS_PATH)
-# Fill missing processed_text with empty string to avoid vectorizer errors
+# fill missing processed_text with empty string to avoid vectorizer errors
 corpus['processed_text'] = corpus['processed_text'].fillna('')
 
 # ml prediction
+start_time = time.time()
 corpus['polarity_ml'] = clf_pol.predict(
     vec_pol.transform(corpus['processed_text'])
 )
+end_time = time.time()
+elapsed = end_time - start_time
+num_records = len(corpus)
+if elapsed > 0:
+    records_per_sec = num_records / elapsed
+else:
+    records_per_sec = float('inf')
 
 corpus['polarity_ml'] = corpus['polarity_ml'].map({
     1: 'POSITIVE',
@@ -181,5 +190,6 @@ corpus['polarity_ml'] = corpus['polarity_ml'].map({
 
 # save output
 corpus.to_csv('results/corpus_with_sentiment.csv', index=False)
-print("\nClassification complete!")
+print(f"\nClassification complete! {num_records} records classified in {elapsed:.2f} seconds.")
+print(f"Records classified per second: {records_per_sec:.2f}")
 
