@@ -250,33 +250,51 @@ corpus['processed_text'] = corpus['processed_text'].fillna('')
 
 
 
-# logistic Regression prediction timing
-start_time = time.time()
+
+# Fair timing: separate embedding and prediction
+import gc
+
+print("[DEBUG] Timing BERT embedding generation...")
+start_embed = time.time()
 corpus_vec = get_bert_embeddings(corpus['processed_text'], tokenizer, bert_model, device=device)
+end_embed = time.time()
+embedding_time = end_embed - start_embed
+print(f"[DEBUG] BERT embedding generation complete in {embedding_time:.2f} seconds.")
+
+# Logistic Regression prediction timing
+start_lr = time.time()
 corpus['polarity_ml'] = clf_pol.predict(corpus_vec)
-end_time = time.time()
-elapsed = end_time - start_time
+end_lr = time.time()
+lr_pred_time = end_lr - start_lr
+print(f"[DEBUG] Logistic Regression prediction done in {lr_pred_time:.2f} seconds.")
 
 # SVM prediction timing
-start_time_svm = time.time()
+start_svm = time.time()
 corpus['polarity_svm'] = clf_svm.predict(corpus_vec)
-end_time_svm = time.time()
-elapsed_svm = end_time_svm - start_time_svm
+end_svm = time.time()
+svm_pred_time = end_svm - start_svm
+print(f"[DEBUG] SVM prediction done in {svm_pred_time:.2f} seconds.")
 
 num_records = len(corpus)
-if elapsed > 0:
-    records_per_sec = num_records / elapsed
+if embedding_time > 0:
+    records_per_sec_embed = num_records / embedding_time
 else:
-    records_per_sec = float('inf')
+    records_per_sec_embed = float('inf')
 
-if elapsed_svm > 0:
-    records_per_sec_svm = num_records / elapsed_svm
+if lr_pred_time > 0:
+    records_per_sec_lr = num_records / lr_pred_time
+else:
+    records_per_sec_lr = float('inf')
+
+if svm_pred_time > 0:
+    records_per_sec_svm = num_records / svm_pred_time
 else:
     records_per_sec_svm = float('inf')
 
-
 corpus['polarity_ml'] = corpus['polarity_ml'].map({1: 'POSITIVE', 0: 'NEGATIVE'})
 corpus['polarity_svm'] = corpus['polarity_svm'].map({1: 'POSITIVE', 0: 'NEGATIVE'})
+
+gc.collect()
 
 
 # dummyClassifier prediction on full corpus
@@ -296,8 +314,11 @@ print(dummy_preds_corpus.value_counts().reindex(order, fill_value=0))
  # save output
 corpus.to_csv(os.path.join(BASE_DIR, 'results', 'corpus_with_sentiment.csv'), index=False)
 
-print(f"\nLogistic Regression classification complete! {num_records} records classified in {elapsed:.2f} seconds.")
-print(f"Records classified per second (Logistic Regression): {records_per_sec:.2f}")
-print(f"\nSVM classification complete! {num_records} records classified in {elapsed_svm:.2f} seconds.")
+
+print(f"\nBERT embedding generation complete! {num_records} records embedded in {embedding_time:.2f} seconds.")
+print(f"Records embedded per second: {records_per_sec_embed:.2f}")
+print(f"\nLogistic Regression classification complete! {num_records} records classified in {lr_pred_time:.2f} seconds.")
+print(f"Records classified per second (Logistic Regression): {records_per_sec_lr:.2f}")
+print(f"\nSVM classification complete! {num_records} records classified in {svm_pred_time:.2f} seconds.")
 print(f"Records classified per second (SVM): {records_per_sec_svm:.2f}")
 
