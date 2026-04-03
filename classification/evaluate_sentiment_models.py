@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+import importlib
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -14,25 +15,27 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
+from scipy.sparse import hstack
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, EarlyStoppingCallback, Trainer, TrainingArguments
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EVAL_PATH = os.path.join(BASE_DIR, 'evaluation', 'evaluation_dataset.xlsx')
 PREPROCESSED_PATH = os.path.join(BASE_DIR, '..', 'preprocessing', 'preprocessed_data', 'preprocessed_data.csv')
-NER_PATH = os.path.join(BASE_DIR, '..', 'preprocessing', 'NER_preprocessed_data', 'NER_preprocessed_data.csv')
 RESULTS_DIR = os.path.join(BASE_DIR, 'results')
 EXCEL_OUTPUT_PATH = os.path.join(RESULTS_DIR, 'evaluation_results.xlsx')
 COMPARISON_IMAGE_PREPROCESSED_PATH = os.path.join(RESULTS_DIR, 'model_comparison_preprocessed_text.png')
 COMPARISON_IMAGE_NER_PATH = os.path.join(RESULTS_DIR, 'model_comparison_ner_text.png')
-COMPARISON_IMAGE_HYBRID_PATH = os.path.join(RESULTS_DIR, 'model_comparison_hybrid_text.png')
+COMPARISON_IMAGE_AUGMENTED_PATH = os.path.join(RESULTS_DIR, 'model_comparison_augmented_text.png')
 
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 TRANSFORMER_MODEL_NAME = 'distilbert-base-uncased'
+NER_MODEL_NAME = 'en_core_web_sm'
 MAX_LENGTH = 128
 RANDOM_STATE = 99
 TRANSFORMER_VAL_SIZE = 0.15
+ALLOWED_NER_LABELS = {'PERSON', 'ORG', 'WORK_OF_ART', 'PRODUCT', 'EVENT'}
 
 
 @dataclass(frozen=True)
@@ -51,8 +54,7 @@ MODEL_SPECS: List[ModelSpec] = [
 
 TEXT_SOURCES: List[Tuple[str, str]] = [
     ('preprocessed_text', PREPROCESSED_PATH),
-    ('ner_text', NER_PATH),
-    ('hybrid_text', ''),
+    ('augmented_text', ''),
 ]
 
 
@@ -117,26 +119,64 @@ def load_text_source(path: str, output_column: str) -> pd.DataFrame:
     return source_df[['review_id', output_column]].copy()
 
 
+def load_ner_pipeline():
+    try:
+        spacy = importlib.import_module('spacy')
+    except ImportError as exc:
+        raise RuntimeError(
+            "spaCy is not installed. Install with: pip install spacy"
+        ) from exc
+
+    try:
+        return spacy.load(NER_MODEL_NAME, disable=['parser', 'lemmatizer', 'textcat'])
+    except OSError as exc:
+        raise RuntimeError(
+            f"spaCy model '{NER_MODEL_NAME}' is not installed. "
+            f"Install with: python -m spacy download {NER_MODEL_NAME}"
+        ) from exc
+
+
+def build_ner_text(series: pd.Series, nlp) -> pd.Series:
+    entity_token_rows: List[str] = []
+    for doc in nlp.pipe(series.fillna('').astype(str).tolist(), batch_size=64):
+        tokens = []
+        seen_pairs = set()
+        for ent in doc.ents:
+            if ent.label_ not in ALLOWED_NER_LABELS:
+                continue
+            # Encode both entity label and value as lexical features.
+            text_token = ent.text.strip().replace(' ', '_')
+            if text_token:
+                token_pair = (ent.label_, text_token.lower())
+                if token_pair in seen_pairs:
+                    continue
+                seen_pairs.add(token_pair)
+                tokens.append(f'ENTLBL_{ent.label_}')
+                tokens.append(f'ENTTXT_{text_token.lower()}')
+        entity_token_rows.append(' '.join(tokens))
+    return pd.Series(entity_token_rows, index=series.index)
+
+
 def build_shared_datasets(train_meta: pd.DataFrame, test_meta: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     preprocessed_df = load_text_source(PREPROCESSED_PATH, 'preprocessed_text')
-    ner_df = load_text_source(NER_PATH, 'ner_text')
 
     train_df = (
         train_meta
         .merge(preprocessed_df, on='review_id', how='left')
-        .merge(ner_df, on='review_id', how='left')
     )
     test_df = (
         test_meta
         .merge(preprocessed_df, on='review_id', how='left')
-        .merge(ner_df, on='review_id', how='left')
     )
 
+    nlp = load_ner_pipeline()
+    train_df['ner_text'] = build_ner_text(train_df['preprocessed_text'], nlp)
+    test_df['ner_text'] = build_ner_text(test_df['preprocessed_text'], nlp)
 
     train_df['ner_text'] = train_df['ner_text'].fillna('')
     test_df['ner_text'] = test_df['ner_text'].fillna('')
-    train_df['hybrid_text'] = (train_df['preprocessed_text'].fillna('') + ' ' + train_df['ner_text']).str.strip()
-    test_df['hybrid_text'] = (test_df['preprocessed_text'].fillna('') + ' ' + test_df['ner_text']).str.strip()
+    train_df['augmented_text'] = (train_df['preprocessed_text'].fillna('') + ' [SEP] ' + train_df['ner_text']).str.strip()
+    test_df['augmented_text'] = (test_df['preprocessed_text'].fillna('') + ' [SEP] ' + test_df['ner_text']).str.strip()
 
     missing_train = train_df['preprocessed_text'].isna().sum()
     missing_test = test_df['preprocessed_text'].isna().sum()
@@ -286,9 +326,26 @@ def evaluate_text_source(
     x_test = test_df[text_column].fillna('')
     y_test = test_df['polarity']
 
-    vectorizer = TfidfVectorizer(max_features=5000, ngram_range=(1, 2))
-    x_train_vec = vectorizer.fit_transform(x_train)
-    x_test_vec = vectorizer.transform(x_test)
+    if text_column == 'augmented_text':
+        base_train = train_df['preprocessed_text'].fillna('')
+        base_test = test_df['preprocessed_text'].fillna('')
+        ner_train = train_df['ner_text'].fillna('')
+        ner_test = test_df['ner_text'].fillna('')
+
+        vectorizer_base = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), min_df=2)
+        vectorizer_ner = TfidfVectorizer(max_features=1500, ngram_range=(1, 2), min_df=2)
+
+        base_train_vec = vectorizer_base.fit_transform(base_train)
+        base_test_vec = vectorizer_base.transform(base_test)
+        ner_train_vec = vectorizer_ner.fit_transform(ner_train)
+        ner_test_vec = vectorizer_ner.transform(ner_test)
+
+        x_train_vec = hstack([base_train_vec, ner_train_vec], format='csr')
+        x_test_vec = hstack([base_test_vec, ner_test_vec], format='csr')
+    else:
+        vectorizer = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), min_df=2)
+        x_train_vec = vectorizer.fit_transform(x_train)
+        x_test_vec = vectorizer.transform(x_test)
 
     detailed_rows: List[pd.DataFrame] = []
     summary_rows: List[Dict[str, object]] = []
@@ -384,8 +441,7 @@ def save_comparison_table_image(summary_df: pd.DataFrame, text_source: str, outp
 
     title_label_map = {
         'preprocessed_text': 'preprocessed_text',
-        'ner_text': 'ner_text',
-        'hybrid_text': 'hybrid_text (preprocessed_text + ner_text)',
+        'augmented_text': 'augmented_text (preprocessed + filtered NER)',
     }
     title_text = f"Model Comparison Summary - {title_label_map.get(text_source, text_source)}"
     plt.title(title_text, fontsize=18, weight='bold', pad=20)
@@ -398,7 +454,7 @@ def main() -> None:
     train_meta, test_meta = load_evaluation_split()
     train_df, test_df = build_shared_datasets(train_meta, test_meta)
 
-    test_dataset = test_df[['review_id', 'ground_truth_polarity', 'preprocessed_text', 'ner_text', 'hybrid_text']].copy()
+    test_dataset = test_df[['review_id', 'ground_truth_polarity', 'preprocessed_text', 'ner_text', 'augmented_text']].copy()
 
     comparison_tables: List[pd.DataFrame] = []
     summary_tables: List[pd.DataFrame] = []
@@ -416,22 +472,16 @@ def main() -> None:
     summary_df = pd.concat(summary_tables, ignore_index=True)
 
     best_preprocessed_model = choose_best_model(summary_df, 'preprocessed_text')
-    best_ner_model = choose_best_model(summary_df, 'ner_text')
-    best_hybrid_model = choose_best_model(summary_df, 'hybrid_text')
+    best_augmented_model = choose_best_model(summary_df, 'augmented_text')
 
     test_dataset['preprocessed_text_prediction_model'] = best_preprocessed_model
     test_dataset['preprocessed_text_prediction_result'] = (
         prediction_store[('preprocessed_text', best_preprocessed_model)]
         .map({1: 'POSITIVE', 0: 'NEGATIVE'})
     )
-    test_dataset['ner_text_prediction_model'] = best_ner_model
-    test_dataset['ner_text_prediction_result'] = (
-        prediction_store[('ner_text', best_ner_model)]
-        .map({1: 'POSITIVE', 0: 'NEGATIVE'})
-    )
-    test_dataset['hybrid_text_prediction_model'] = best_hybrid_model
-    test_dataset['hybrid_text_prediction_result'] = (
-        prediction_store[('hybrid_text', best_hybrid_model)]
+    test_dataset['augmented_text_prediction_model'] = best_augmented_model
+    test_dataset['augmented_text_prediction_result'] = (
+        prediction_store[('augmented_text', best_augmented_model)]
         .map({1: 'POSITIVE', 0: 'NEGATIVE'})
     )
 
@@ -443,8 +493,7 @@ def main() -> None:
     comparison_df.to_csv(comparison_csv_path, index=False)
     summary_df.to_csv(summary_csv_path, index=False)
     save_comparison_table_image(summary_df, 'preprocessed_text', COMPARISON_IMAGE_PREPROCESSED_PATH)
-    save_comparison_table_image(summary_df, 'ner_text', COMPARISON_IMAGE_NER_PATH)
-    save_comparison_table_image(summary_df, 'hybrid_text', COMPARISON_IMAGE_HYBRID_PATH)
+    save_comparison_table_image(summary_df, 'augmented_text', COMPARISON_IMAGE_AUGMENTED_PATH)
 
     with pd.ExcelWriter(EXCEL_OUTPUT_PATH) as writer:
         summary_df.sort_values(['text_source', 'weighted_f1', 'accuracy'], ascending=[True, False, False]).to_excel(
@@ -457,13 +506,11 @@ def main() -> None:
 
     print('Evaluation split size:', len(test_dataset))
     print('Best preprocessed_text model:', best_preprocessed_model)
-    print('Best ner_text model:', best_ner_model)
-    print('Best hybrid_text model:', best_hybrid_model)
+    print('Best augmented_text model:', best_augmented_model)
     print('\nComparison table saved to:', comparison_csv_path)
     print('Summary table saved to:', summary_csv_path)
     print('Comparison image saved to:', COMPARISON_IMAGE_PREPROCESSED_PATH)
-    print('Comparison image saved to:', COMPARISON_IMAGE_NER_PATH)
-    print('Comparison image saved to:', COMPARISON_IMAGE_HYBRID_PATH)
+    print('Comparison image saved to:', COMPARISON_IMAGE_AUGMENTED_PATH)
     print('Excel workbook saved to:', EXCEL_OUTPUT_PATH)
     print('Test dataset results saved to:', test_dataset_path)
 
