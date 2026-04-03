@@ -43,7 +43,6 @@ def main() -> None:
     solr_select_url = f"{args.solr_base}/{args.core}/select"
     session = requests.Session()
 
-    # Common params: keep payload small and ensure we always get fields we print.
     common_fl = "id,movie_title,summary,helpfulness_score,submission_date"
 
     queries = [
@@ -105,4 +104,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
