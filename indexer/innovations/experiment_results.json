@@ -1,0 +1,399 @@
+{
+  "solr_base": "http://127.0.0.1:8983/solr",
+  "core": "mcu_reviews",
+  "generated_at_unix": 1775546741.9513376,
+  "experiments": {
+    "exp1_movie_title_copy_field": {
+      "title": "movie_title_t copy-field vs string movie_title",
+      "variants": [
+        {
+          "label": "before_string_exact_movie_title",
+          "query": "movie_title:\"infinity war\"",
+          "numFound": 0,
+          "elapsed_ms": 9.02
+        },
+        {
+          "label": "after_text_en_movie_title_t",
+          "query": "movie_title_t:(infinity war)",
+          "numFound": 6355,
+          "elapsed_ms": 7.69
+        }
+      ]
+    },
+    "exp2a_helpfulness_masterpiece": {
+      "title": "helpfulness ranking (keyword='masterpiece')",
+      "variants": [
+        {
+          "label": "bm25_default",
+          "params": {
+            "q": "content:masterpiece",
+            "wt": "json",
+            "fl": "id,movie_title,helpfulness_score"
+          },
+          "top_n": [
+            {
+              "id": "rw5357526",
+              "movie_title": "Avengers: Endgame",
+              "helpfulness_score": 0.2857143
+            },
+            {
+              "id": "rw4799804",
+              "movie_title": "Avengers: Endgame",
+              "helpfulness_score": 0.2
+            },
+            {
+              "id": "rw7648783",
+              "movie_title": "Spider-Man: No Way Home",
+              "helpfulness_score": 0.0
+            },
+            {
+              "id": "rw7755469",
+              "movie_title": "Spider-Man: No Way Home",
+              "helpfulness_score": 0.0
+            },
+            {
+              "id": "rw9101469",
+              "movie_title": "Guardians of the Galaxy Vol. 3",
+              "helpfulness_score": 0.2857143
+            }
+          ],
+          "avg_helpfulness_top_n": 0.154286,
+          "elapsed_ms": 10.23,
+          "numFound": 2044
+        },
+        {
+          "label": "sort_helpfulness_desc",
+          "params": {
+            "q": "content:masterpiece",
+            "sort": "helpfulness_score desc",
+            "wt": "json",
+            "fl": "id,movie_title,helpfulness_score"
+          },
+          "top_n": [
+            {
+              "id": "rw5681817",
+              "movie_title": "Captain America: The Winter Soldier",
+              "helpfulness_score": 0.93501806
+            },
+            {
+              "id": "rw11145009",
+              "movie_title": "Avengers: Endgame",
+              "helpfulness_score": 0.85714287
+            },
+            {
+              "id": "rw10966164",
+              "movie_title": "Shang-Chi and the Legend of the Ten Rings",
+              "helpfulness_score": 0.85714287
+            },
+            {
+              "id": "rw11145730",
+              "movie_title": "Avengers: Endgame",
+              "helpfulness_score": 0.8333333
+            },
+            {
+              "id": "rw9901186",
+              "movie_title": "Spider-Man: Far From Home",
+              "helpfulness_score": 0.8333333
+            }
+          ],
+          "avg_helpfulness_top_n": 0.863194,
+          "elapsed_ms": 6.07,
+          "numFound": 2044
+        },
+        {
+          "label": "edismax_bf_helpfulness",
+          "params": {
+            "defType": "edismax",
+            "q": "masterpiece",
+            "qf": "content",
+            "bf": "helpfulness_score",
+            "wt": "json",
+            "fl": "id,movie_title,helpfulness_score"
+          },
+          "top_n": [
+            {
+              "id": "rw8132026",
+              "movie_title": "Avengers: Infinity War",
+              "helpfulness_score": 0.6
+            },
+            {
+              "id": "rw5681817",
+              "movie_title": "Captain America: The Winter Soldier",
+              "helpfulness_score": 0.93501806
+            },
+            {
+              "id": "rw7651297",
+              "movie_title": "Spider-Man: No Way Home",
+              "helpfulness_score": 0.6
+            },
+            {
+              "id": "rw4724806",
+              "movie_title": "Captain Marvel",
+              "helpfulness_score": 0.7
+            },
+            {
+              "id": "rw5357526",
+              "movie_title": "Avengers: Endgame",
+              "helpfulness_score": 0.2857143
+            }
+          ],
+          "avg_helpfulness_top_n": 0.624146,
+          "elapsed_ms": 7.18,
+          "numFound": 2044
+        }
+      ]
+    },
+    "exp2b_helpfulness_disappointing": {
+      "title": "helpfulness ranking (keyword='disappointing')",
+      "variants": [
+        {
+          "label": "bm25_default",
+          "params": {
+            "q": "content:disappointing",
+            "wt": "json",
+            "fl": "id,movie_title,helpfulness_score"
+          },
+          "top_n": [
+            {
+              "id": "rw3576457",
+              "movie_title": "Doctor Strange",
+              "helpfulness_score": 0.4716981
+            },
+            {
+              "id": "rw7116856",
+              "movie_title": "Black Widow",
+              "helpfulness_score": 0.35714287
+            },
+            {
+              "id": "rw8116258",
+              "movie_title": "Doctor Strange in the Multiverse of Madness",
+              "helpfulness_score": 0.5943396
+            },
+            {
+              "id": "rw5161230",
+              "movie_title": "Avengers: Endgame",
+              "helpfulness_score": 0.43103448
+            },
+            {
+              "id": "rw6397818",
+              "movie_title": "Thor: Ragnarok",
+              "helpfulness_score": 0.2857143
+            }
+          ],
+          "avg_helpfulness_top_n": 0.427986,
+          "elapsed_ms": 7.52,
+          "numFound": 9191
+        },
+        {
+          "label": "sort_helpfulness_desc",
+          "params": {
+            "q": "content:disappointing",
+            "sort": "helpfulness_score desc",
+            "wt": "json",
+            "fl": "id,movie_title,helpfulness_score"
+          },
+          "top_n": [
+            {
+              "id": "rw3067309",
+              "movie_title": "Iron Man",
+              "helpfulness_score": 0.9459459
+            },
+            {
+              "id": "rw10006159",
+              "movie_title": "Thor: Love and Thunder",
+              "helpfulness_score": 0.9
+            },
+            {
+              "id": "rw4462973",
+              "movie_title": "Captain America: The Winter Soldier",
+              "helpfulness_score": 0.8965517
+            },
+            {
+              "id": "rw10319275",
+              "movie_title": "Captain America: Brave New World",
+              "helpfulness_score": 0.8729282
+            },
+            {
+              "id": "rw10326898",
+              "movie_title": "Captain America: Brave New World",
+              "helpfulness_score": 0.87116563
+            }
+          ],
+          "avg_helpfulness_top_n": 0.897318,
+          "elapsed_ms": 7.56,
+          "numFound": 9191
+        },
+        {
+          "label": "edismax_bf_helpfulness",
+          "params": {
+            "defType": "edismax",
+            "q": "disappointing",
+            "qf": "content",
+            "bf": "helpfulness_score",
+            "wt": "json",
+            "fl": "id,movie_title,helpfulness_score"
+          },
+          "top_n": [
+            {
+              "id": "rw3576457",
+              "movie_title": "Doctor Strange",
+              "helpfulness_score": 0.4716981
+            },
+            {
+              "id": "rw8116258",
+              "movie_title": "Doctor Strange in the Multiverse of Madness",
+              "helpfulness_score": 0.5943396
+            },
+            {
+              "id": "rw4730733",
+              "movie_title": "Captain Marvel",
+              "helpfulness_score": 0.73333335
+            },
+            {
+              "id": "rw8369179",
+              "movie_title": "Thor: Love and Thunder",
+              "helpfulness_score": 0.625
+            },
+            {
+              "id": "rw8118043",
+              "movie_title": "Doctor Strange in the Multiverse of Madness",
+              "helpfulness_score": 0.625
+            }
+          ],
+          "avg_helpfulness_top_n": 0.609874,
+          "elapsed_ms": 6.37,
+          "numFound": 9191
+        }
+      ]
+    },
+    "exp3_facets_disappointing": {
+      "title": "faceted search (keyword='disappointing')",
+      "numFound": 9191,
+      "elapsed_ms": 11.56,
+      "facet_movie_title_top": [
+        {
+          "movie": "Avengers: Endgame",
+          "count": 821
+        },
+        {
+          "movie": "Thor: Love and Thunder",
+          "count": 632
+        },
+        {
+          "movie": "Doctor Strange in the Multiverse of Madness",
+          "count": 626
+        },
+        {
+          "movie": "Captain Marvel",
+          "count": 570
+        },
+        {
+          "movie": "Spider-Man: No Way Home",
+          "count": 401
+        },
+        {
+          "movie": "Avengers: Infinity War",
+          "count": 362
+        },
+        {
+          "movie": "Black Widow",
+          "count": 360
+        },
+        {
+          "movie": "Eternals",
+          "count": 355
+        },
+        {
+          "movie": "Iron Man 3",
+          "count": 355
+        },
+        {
+          "movie": "Black Panther",
+          "count": 328
+        }
+      ],
+      "facet_year_top": [
+        {
+          "year": "2022",
+          "count": 1710
+        },
+        {
+          "year": "2019",
+          "count": 1518
+        },
+        {
+          "year": "2021",
+          "count": 1033
+        },
+        {
+          "year": "2025",
+          "count": 725
+        },
+        {
+          "year": "2018",
+          "count": 708
+        },
+        {
+          "year": "2023",
+          "count": 659
+        },
+        {
+          "year": "2024",
+          "count": 415
+        },
+        {
+          "year": "2013",
+          "count": 408
+        },
+        {
+          "year": "2017",
+          "count": 324
+        },
+        {
+          "year": "2015",
+          "count": 321
+        }
+      ],
+      "facet_author_rating_ranges": [
+        "1.0",
+        1988,
+        "4.0",
+        2928,
+        "7.0",
+        2965
+      ],
+      "sentiment_facet_raw": []
+    },
+    "exp4_timeline_performance": {
+      "title": "timeline / date-range (keyword='performance')",
+      "windows": [
+        {
+          "label": "unfiltered",
+          "filter_query": null,
+          "numFound": 9431,
+          "elapsed_ms": 6.03
+        },
+        {
+          "label": "post_endgame_2019_2021",
+          "filter_query": "submission_date:[2019-01-01T00:00:00Z TO 2021-12-31T23:59:59Z]",
+          "numFound": 2291,
+          "elapsed_ms": 12.93
+        },
+        {
+          "label": "phase4_2022_2024",
+          "filter_query": "submission_date:[2022-01-01T00:00:00Z TO 2024-12-31T23:59:59Z]",
+          "numFound": 2708,
+          "elapsed_ms": 14.24
+        }
+      ]
+    },
+    "exp5_sentiment_facet": {
+      "title": "sentiment facet (reserved field; populate via classifier merge in ingest)",
+      "keyword": "disappointing",
+      "numFound": 9191,
+      "elapsed_ms": 6.62,
+      "sentiment_counts_non_empty": [],
+      "note": "If empty: sentiment field exists in schema but ingest.py sets empty string until merged with classification/sentiment_analysis/results/test_dataset_results.csv (or full run)."
+    }
+  }
+}
