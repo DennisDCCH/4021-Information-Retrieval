@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MCU Review Search on Solr</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: rgba(18, 24, 38, 0.9);
+      --panel-strong: rgba(12, 18, 30, 0.95);
+      --text: #edf2f7;
+      --muted: #9fb0c4;
+      --accent: #22c55e;
+      --accent-soft: #86efac;
+      --line: rgba(148, 163, 184, 0.18);
+      --chip: rgba(34, 197, 94, 0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+      color: var(--text);
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(34, 197, 94, 0.18), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.14), transparent 28%),
+        linear-gradient(180deg, #081018 0%, #0d1117 100%);
+    }
+    header, main {
+      width: min(1120px, calc(100vw - 32px));
+      margin: 0 auto;
+    }
+    header {
+      padding: 28px 0 14px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 29px;
+      letter-spacing: 0.01em;
+    }
+    .shell {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+      backdrop-filter: blur(12px);
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: minmax(0, 2.2fr) minmax(160px, 1fr) minmax(120px, 0.7fr) minmax(130px, 0.7fr) minmax(130px, 0.7fr) minmax(180px, 0.9fr);
+      gap: 12px;
+      align-items: end;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    input, select, button {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-strong);
+      color: var(--text);
+      padding: 13px 14px;
+      font: inherit;
+    }
+    button {
+      background: var(--accent);
+      border: none;
+      color: #06240f;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .meta {
+      margin: 14px 2px 18px;
+      color: var(--muted);
+      min-height: 20px;
+      font-size: 14px;
+    }
+    .results {
+      display: grid;
+      gap: 12px;
+      padding-bottom: 28px;
+    }
+    .result {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+    }
+    .movie {
+      color: var(--accent-soft);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    .title {
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 10px;
+    }
+    .snippet {
+      color: #d5dde8;
+      line-height: 1.55;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .chip {
+      background: var(--chip);
+      border: 1px solid rgba(134, 239, 172, 0.2);
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 12px;
+      color: var(--accent-soft);
+    }
+    @media (max-width: 960px) {
+      .controls {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    @media (max-width: 640px) {
+      header, main {
+        width: min(100vw - 24px, 100%);
+      }
+      .controls {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>MCU Review Search</h1>
+  </header>
+
+  <main>
+    <div class="shell">
+      <div class="controls">
+        <div>
+          <label for="q">Search</label>
+          <input id="q" type="text" placeholder="infinity war" />
+        </div>
+        <div>
+          <label for="movie">Movie</label>
+          <input id="movie" type="text" placeholder="Thor Ragnarok" />
+        </div>
+        <div>
+          <label for="min_rating">Min Rating</label>
+          <input id="min_rating" type="number" min="0" max="10" step="0.5" placeholder="6" />
+        </div>
+        <div>
+          <label for="start_year">From</label>
+          <input id="start_year" type="number" min="2000" max="2100" placeholder="2019" />
+        </div>
+        <div>
+          <label for="end_year">To</label>
+          <input id="end_year" type="number" min="2000" max="2100" placeholder="2021" />
+        </div>
+        <div>
+          <label for="sort">Sort</label>
+          <select id="sort">
+            <option value="score desc">Relevance</option>
+            <option value="helpfulness_score desc">Helpfulness</option>
+            <option value="author_rating desc">Author Rating</option>
+            <option value="submission_date desc">Most Recent</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top: 12px;">
+        <button id="go">Search</button>
+      </div>
+    </div>
+
+    <div id="meta" class="meta"></div>
+    <div id="results" class="results"></div>
+  </main>
+
+  <script>
+    const qInput = document.getElementById('q');
+    const movieInput = document.getElementById('movie');
+    const minRatingInput = document.getElementById('min_rating');
+    const startYearInput = document.getElementById('start_year');
+    const endYearInput = document.getElementById('end_year');
+    const sortInput = document.getElementById('sort');
+    const goBtn = document.getElementById('go');
+    const meta = document.getElementById('meta');
+    const results = document.getElementById('results');
+
+    function chip(text) {
+      const div = document.createElement('div');
+      div.className = 'chip';
+      div.textContent = text;
+      return div;
+    }
+
+    function render(resultsList) {
+      results.innerHTML = '';
+      resultsList.forEach((r) => {
+        const card = document.createElement('div');
+        card.className = 'result';
+
+        const movie = document.createElement('div');
+        movie.className = 'movie';
+        movie.textContent = r.movie_title || 'MCU review';
+
+        const title = document.createElement('div');
+        title.className = 'title';
+        title.textContent = r.title || '(untitled review)';
+
+        const snippet = document.createElement('div');
+        snippet.className = 'snippet';
+        snippet.textContent = (r.text || '').slice(0, 320);
+
+        const chips = document.createElement('div');
+        chips.className = 'chips';
+        chips.appendChild(chip(`score=${r.score}`));
+        if (r.author) chips.appendChild(chip(`author=${r.author}`));
+        if (r.author_rating !== '') chips.appendChild(chip(`rating=${r.author_rating}`));
+        if (r.helpfulness_score !== '') chips.appendChild(chip(`helpfulness=${Number(r.helpfulness_score).toFixed(3)}`));
+        if (r.upvotes !== '') chips.appendChild(chip(`upvotes=${r.upvotes}`));
+        if (r.date) chips.appendChild(chip(r.date));
+
+        card.appendChild(movie);
+        card.appendChild(title);
+        card.appendChild(snippet);
+        card.appendChild(chips);
+        results.appendChild(card);
+      });
+    }
+
+    async function search() {
+      const q = qInput.value.trim();
+      if (!q) return;
+
+      const params = new URLSearchParams({
+        q,
+        k: '10',
+        sort: sortInput.value,
+      });
+      if (movieInput.value.trim()) params.set('movie', movieInput.value.trim());
+      if (minRatingInput.value.trim()) params.set('min_rating', minRatingInput.value.trim());
+      if (startYearInput.value.trim()) params.set('start_year', startYearInput.value.trim());
+      if (endYearInput.value.trim()) params.set('end_year', endYearInput.value.trim());
+
+      meta.textContent = 'Searching Solr...';
+      const res = await fetch(`/search?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok) {
+        meta.textContent = data.error || 'Search failed';
+        results.innerHTML = '';
+        return;
+      }
+
+      const activeFilters = Object.entries(data.filters || {})
+        .filter(([, value]) => value && value !== 'score desc')
+        .map(([key, value]) => `${key}=${value}`);
+      meta.textContent = `Query time: ${data.time_ms} ms | Results: ${data.results.length}` +
+        (activeFilters.length ? ` | Filters: ${activeFilters.join(', ')}` : '');
+      render(data.results);
+    }
+
+    goBtn.addEventListener('click', search);
+    [qInput, movieInput, minRatingInput, startYearInput, endYearInput].forEach((el) => {
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') search();
+      });
+    });
+  </script>
+</body>
+</html>
