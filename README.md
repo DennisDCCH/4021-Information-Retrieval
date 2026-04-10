@@ -51,3 +51,28 @@ End-to-end pipeline for crawling MCU movie reviews, optional classification (sen
    Writes [`indexer/innovations/experiment_results.json`](indexer/innovations/experiment_results.json) and prints tables to stdout.
 
 For Solr admin UI: `http://localhost:8983/solr/#/mcu_reviews`.
+
+## Classification: Sentiment Analysis
+
+The sentiment analysis evaluation script is located at [classification/sentiment_analysis/evaluate_sentiment_models.py](classification/sentiment_analysis/evaluate_sentiment_models.py#L1). It evaluates the classical models and transformer model, then writes the comparison outputs into [classification/sentiment_analysis/results/](classification/sentiment_analysis/results/).
+
+1. Install the required Python libraries:
+
+   ```bash
+   pip install pandas matplotlib torch scikit-learn scipy transformers spacy openpyxl
+   python -m spacy download en_core_web_sm
+   ```
+
+2. Ensure the preprocessed dataset path inside the script is correct before running it.
+
+   The script currently expects the CSV path defined by `PREPROCESSED_PATH` in [evaluate_sentiment_models.py](classification/sentiment_analysis/evaluate_sentiment_models.py#L25). 
+   
+   Since the repository is submitted as a zip, extract the folder and update the constant to point to the extracted preprocessed dataset.
+
+3. Run the evaluation:
+
+   ```bash
+   python classification/sentiment_analysis/evaluate_sentiment_models.py
+   ```
+
+   This generates the comparison tables, summary CSVs, the test dataset results, and the random-test predictions/summary files in the sentiment analysis results folder.
