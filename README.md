@@ -69,10 +69,16 @@ The sentiment analysis evaluation script is located at [classification/sentiment
    
    Since the repository is submitted as a zip, extract the folder and update the constant to point to the extracted preprocessed dataset.
 
-3. Run the evaluation:
+3. Run the default evaluation:
 
    ```bash
    python classification/sentiment_analysis/evaluate_sentiment_models.py
    ```
 
    This generates the comparison tables, summary CSVs, the test dataset results, and the random-test predictions/summary files in the sentiment analysis results folder.
+
+   Optional: if you want to include sentiment labeling on the full corpus, run:
+
+   ```bash
+   python classification/sentiment_analysis/evaluate_sentiment_models_on_corpus.py
+   ```

@@ -1,0 +1,5 @@
+model,text_source,rows_scored,predicted_negative,predicted_positive,predicted_positive_share,classification_time_seconds
+Logistic Regression,preprocessed_text,90310,37590,52720,0.583767024692725,7.688909899999999
+SVM,preprocessed_text,90310,37531,52779,0.5844203299745322,49.303148500000134
+DummyClassifier,preprocessed_text,90310,45167,45143,0.49986712434946295,7.678174800000079
+Transformer (DistilBERT),preprocessed_text,90310,38209,52101,0.5769128557191895,2750.7141263000003
