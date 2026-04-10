@@ -1,0 +1,2 @@
+model,text_source,rows_scored,classification_time_seconds,accuracy,macro_f1,weighted_f1
+Transformer (DistilBERT),preprocessed_text,300,9.345317200000864,0.8233333333333334,0.8188880409153558,0.823238752643589

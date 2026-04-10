@@ -12,7 +12,7 @@ import torch
 from sklearn.dummy import DummyClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, f1_score, accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 from scipy.sparse import hstack
@@ -21,9 +21,12 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer, Earl
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EVAL_PATH = os.path.join(BASE_DIR, 'evaluation', 'evaluation_dataset.xlsx')
+RANDOM_TEST_PATH = os.path.join(BASE_DIR, 'evaluation', 'random_test_set_300.xlsx')
 PREPROCESSED_PATH = os.path.join(BASE_DIR, '..', 'preprocessing', 'preprocessed_data', 'preprocessed_data.csv')
 RESULTS_DIR = os.path.join(BASE_DIR, 'results')
 EXCEL_OUTPUT_PATH = os.path.join(RESULTS_DIR, 'evaluation_results.xlsx')
+RANDOM_TEST_PREDICTIONS_PATH = os.path.join(RESULTS_DIR, 'random_test_set_300_preprocessed_predictions.csv')
+RANDOM_TEST_SUMMARY_PATH = os.path.join(RESULTS_DIR, 'random_test_set_300_preprocessed_summary.csv')
 COMPARISON_IMAGE_PREPROCESSED_PATH = os.path.join(RESULTS_DIR, 'model_comparison_preprocessed_text.png')
 COMPARISON_IMAGE_NER_PATH = os.path.join(RESULTS_DIR, 'model_comparison_ner_text.png')
 COMPARISON_IMAGE_AUGMENTED_PATH = os.path.join(RESULTS_DIR, 'model_comparison_augmented_text.png')
@@ -119,6 +122,123 @@ def load_text_source(path: str, output_column: str) -> pd.DataFrame:
     return source_df[['review_id', output_column]].copy()
 
 
+def normalize_polarity_label(series: pd.Series) -> pd.Series:
+    return (
+        series.astype(str)
+        .str.strip()
+        .str.upper()
+        .replace({'NAN': '', 'NONE': ''})
+    )
+
+
+def map_polarity_to_binary(series: pd.Series) -> pd.Series:
+    return normalize_polarity_label(series).map({'NEGATIVE': 0, 'POSITIVE': 1})
+
+
+def load_random_test_with_preprocessed() -> pd.DataFrame:
+    if not os.path.exists(RANDOM_TEST_PATH):
+        raise FileNotFoundError(f'Random test dataset not found at: {RANDOM_TEST_PATH}')
+
+    random_df = pd.read_excel(RANDOM_TEST_PATH)
+    random_df = ensure_review_id(random_df)
+
+    label_col: Optional[str] = None
+    if 'ground_truth' in random_df.columns:
+        label_col = 'ground_truth'
+    elif 'ground_truth_polarity' in random_df.columns:
+        label_col = 'ground_truth_polarity'
+
+    if label_col is not None:
+        random_df['label_text'] = normalize_polarity_label(random_df[label_col])
+        random_df['polarity'] = map_polarity_to_binary(random_df[label_col])
+    else:
+        random_df['label_text'] = ''
+        random_df['polarity'] = pd.Series([pd.NA] * len(random_df), index=random_df.index, dtype='Int64')
+
+    preprocessed_df = load_text_source(PREPROCESSED_PATH, 'preprocessed_text')
+    random_df = random_df.merge(preprocessed_df, on='review_id', how='left')
+
+    missing_text = random_df['preprocessed_text'].isna().sum()
+    if missing_text:
+        raise ValueError(
+            f'Missing preprocessed_text values in random test set: {missing_text}. '
+            'Check that review_id matches preprocessed_data.csv.'
+        )
+
+    return random_df
+
+
+def evaluate_best_preprocessed_model_on_random_test(
+    best_model_name: str,
+    trained_artifacts: Dict[str, Dict[str, object]],
+) -> None:
+    random_df = load_random_test_with_preprocessed().copy()
+    x_random = random_df['preprocessed_text'].fillna('')
+    artifact = trained_artifacts.get(best_model_name)
+    if artifact is None:
+        raise ValueError(f'Missing trained artifact for model: {best_model_name}')
+
+    start_time = time.perf_counter()
+    if artifact.get('kind') == 'transformer':
+        tokenizer = artifact['tokenizer']
+        trainer = artifact['trainer']
+        random_dataset = EncodedTextDataset(
+            x_random,
+            pd.Series([0] * len(random_df), index=random_df.index),
+            tokenizer,
+        )
+        prediction_output = trainer.predict(random_dataset)
+        logits_tensor = torch.tensor(prediction_output.predictions)
+        y_pred = pd.Series(torch.argmax(logits_tensor, dim=1).numpy().astype(int), index=random_df.index)
+        prob_pos = pd.Series(torch.softmax(logits_tensor, dim=1)[:, 1].numpy(), index=random_df.index)
+    else:
+        vectorizer = artifact.get('vectorizer')
+        model = artifact.get('model')
+        if vectorizer is None or model is None:
+            raise ValueError(f'Missing in-memory classical artifact for model: {best_model_name}')
+        x_random_vec = vectorizer.transform(x_random)
+        y_pred = pd.Series(model.predict(x_random_vec), index=random_df.index)
+        if hasattr(model, 'predict_proba'):
+            prob_pos = pd.Series(model.predict_proba(x_random_vec)[:, 1], index=random_df.index)
+        else:
+            prob_pos = pd.Series([pd.NA] * len(random_df), index=random_df.index)
+
+    classification_time = time.perf_counter() - start_time
+
+    prediction_df = random_df.copy()
+    prediction_df['model'] = best_model_name
+    prediction_df['text_source'] = 'preprocessed_text'
+    prediction_df['predicted_label'] = y_pred.map({1: 'POSITIVE', 0: 'NEGATIVE'})
+    prediction_df['predicted_positive_probability'] = prob_pos
+    prediction_df.to_csv(RANDOM_TEST_PREDICTIONS_PATH, index=False)
+
+    summary_row: Dict[str, object] = {
+        'model': best_model_name,
+        'text_source': 'preprocessed_text',
+        'rows_scored': len(prediction_df),
+        'classification_time_seconds': classification_time,
+    }
+
+    labeled_mask = prediction_df['polarity'].isin([0, 1])
+    if labeled_mask.any():
+        report = classification_report(
+            prediction_df.loc[labeled_mask, 'polarity'].astype(int),
+            y_pred.loc[labeled_mask].astype(int),
+            digits=3,
+            output_dict=True,
+            zero_division=0,
+        )
+        summary_row['accuracy'] = report.get('accuracy', 0.0)
+        summary_row['macro_f1'] = report['macro avg']['f1-score']
+        summary_row['weighted_f1'] = report['weighted avg']['f1-score']
+    else:
+        summary_row['accuracy'] = pd.NA
+        summary_row['macro_f1'] = pd.NA
+        summary_row['weighted_f1'] = pd.NA
+
+    pd.DataFrame([summary_row]).to_csv(RANDOM_TEST_SUMMARY_PATH, index=False)
+
+
 def load_ner_pipeline():
     try:
         spacy = importlib.import_module('spacy')
@@ -196,7 +316,7 @@ def classical_model_report(
     y_train: pd.Series,
     x_test_vec,
     y_test: pd.Series,
-) -> Tuple[pd.DataFrame, Dict[str, object], pd.Series]:
+) -> Tuple[pd.DataFrame, Dict[str, object], pd.Series, object]:
     model = model_factory()
     model.fit(x_train_vec, y_train)
 
@@ -227,16 +347,17 @@ def classical_model_report(
         'classification_time_seconds': classification_time,
     }
     predictions = pd.Series(y_pred, index=y_test.index)
-    return report_df, summary_row, predictions
+    return report_df, summary_row, predictions, model
 
 
 def transformer_model_report(
     model_name: str,
+    text_source: str,
     x_train: pd.Series,
     y_train: pd.Series,
     x_test: pd.Series,
     y_test: pd.Series,
-) -> Tuple[pd.DataFrame, Dict[str, object], pd.Series]:
+) -> Tuple[pd.DataFrame, Dict[str, object], pd.Series, Dict[str, object]]:
     tokenizer = AutoTokenizer.from_pretrained(TRANSFORMER_MODEL_NAME)
     stratify_labels = y_train if y_train.nunique() > 1 and y_train.value_counts().min() >= 2 else None
     x_train_fit, x_val, y_train_fit, y_val = train_test_split(
@@ -253,21 +374,40 @@ def transformer_model_report(
 
     model = AutoModelForSequenceClassification.from_pretrained(TRANSFORMER_MODEL_NAME, num_labels=2)
 
+    def compute_metrics(eval_pred):
+        logits, labels = eval_pred
+        preds = logits.argmax(axis=1)
+        return {
+            'accuracy': accuracy_score(labels, preds),
+            'macro_f1': f1_score(labels, preds, average='macro', zero_division=0),
+            'weighted_f1': f1_score(labels, preds, average='weighted', zero_division=0),
+        }
+
+    run_name_by_text_source = {
+        'preprocessed_text': 'transformer_(distilbert_without_ner)',
+        'augmented_text': 'transformer_(distilbert_with_ner)',
+    }
+    transformer_run_name = run_name_by_text_source.get(
+        text_source,
+        model_name.replace(' ', '_').lower(),
+    )
+
     training_args = TrainingArguments(
-        output_dir=os.path.join(RESULTS_DIR, 'transformer_runs', model_name.replace(' ', '_').lower()),
-        num_train_epochs=3,
+        output_dir=os.path.join(RESULTS_DIR, 'transformer_runs', transformer_run_name),
+        num_train_epochs=4,
         per_device_train_batch_size=8,
         per_device_eval_batch_size=8,
-        learning_rate=2e-5,
-        warmup_ratio=0.1,
+        learning_rate=3e-5,
+        warmup_ratio=0.06,
         weight_decay=0.01,
         eval_strategy='epoch',
         logging_strategy='epoch',
         save_strategy='epoch',
-        save_total_limit=1,
+        save_total_limit=2,
         load_best_model_at_end=True,
-        metric_for_best_model='eval_loss',
-        greater_is_better=False,
+        metric_for_best_model='eval_macro_f1',
+        greater_is_better=True,
+        label_smoothing_factor=0.05,
         report_to=[],
         seed=RANDOM_STATE,
         fp16=torch.cuda.is_available(),
@@ -280,7 +420,8 @@ def transformer_model_report(
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=2)],
+        compute_metrics=compute_metrics,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=1)],
     )
 
     trainer.train()
@@ -289,7 +430,8 @@ def transformer_model_report(
     prediction_output = trainer.predict(test_dataset)
     classification_time = time.perf_counter() - start_time
 
-    y_pred = prediction_output.predictions.argmax(axis=1)
+    test_logits = torch.tensor(prediction_output.predictions)
+    y_pred = torch.argmax(test_logits, dim=1).numpy().astype(int)
     report = classification_report(
         y_test,
         y_pred,
@@ -311,16 +453,24 @@ def transformer_model_report(
         'macro_f1': report['macro avg']['f1-score'],
         'weighted_f1': report['weighted avg']['f1-score'],
         'classification_time_seconds': classification_time,
+        'decision_threshold': 'argmax_no_threshold',
+        'best_val_macro_f1': trainer.state.best_metric,
     }
+
     predictions = pd.Series(y_pred, index=y_test.index)
-    return report_df, summary_row, predictions
+    artifact = {
+        'kind': 'transformer',
+        'trainer': trainer,
+        'tokenizer': tokenizer,
+    }
+    return report_df, summary_row, predictions, artifact
 
 
 def evaluate_text_source(
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
     text_column: str,
-) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, pd.Series]]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, pd.Series], Dict[str, Dict[str, object]]]:
     x_train = train_df[text_column].fillna('')
     y_train = train_df['polarity']
     x_test = test_df[text_column].fillna('')
@@ -350,12 +500,13 @@ def evaluate_text_source(
     detailed_rows: List[pd.DataFrame] = []
     summary_rows: List[Dict[str, object]] = []
     predictions: Dict[str, pd.Series] = {}
+    artifacts: Dict[str, Dict[str, object]] = {}
 
     for spec in MODEL_SPECS:
         if spec.kind == 'classical':
             if spec.factory is None:
                 raise ValueError(f'Missing factory for classical model {spec.name}')
-            report_df, summary_row, y_pred = classical_model_report(
+            report_df, summary_row, y_pred, fitted_model = classical_model_report(
                 spec.name,
                 spec.factory,
                 x_train_vec,
@@ -363,14 +514,21 @@ def evaluate_text_source(
                 x_test_vec,
                 y_test,
             )
+            artifacts[spec.name] = {
+                'kind': 'classical',
+                'model': fitted_model,
+                'vectorizer': vectorizer if text_column == 'preprocessed_text' else None,
+            }
         elif spec.kind == 'transformer':
-            report_df, summary_row, y_pred = transformer_model_report(
+            report_df, summary_row, y_pred, artifact = transformer_model_report(
                 spec.name,
+                text_column,
                 x_train,
                 y_train,
                 x_test,
                 y_test,
             )
+            artifacts[spec.name] = artifact
         else:
             raise ValueError(f'Unknown model kind: {spec.kind}')
 
@@ -385,7 +543,7 @@ def evaluate_text_source(
 
     detailed_report_df = pd.concat(detailed_rows, ignore_index=True)
     summary_df = pd.DataFrame(summary_rows)
-    return detailed_report_df, summary_df, predictions
+    return detailed_report_df, summary_df, predictions, artifacts
 
 
 def choose_best_model(summary_df: pd.DataFrame, text_source: str) -> str:
@@ -459,11 +617,15 @@ def main() -> None:
     comparison_tables: List[pd.DataFrame] = []
     summary_tables: List[pd.DataFrame] = []
     prediction_store: Dict[Tuple[str, str], pd.Series] = {}
+    preprocessed_artifacts: Dict[str, Dict[str, object]] = {}
 
     for text_source, _ in TEXT_SOURCES:
-        detailed_report_df, summary_df, predictions = evaluate_text_source(train_df, test_df, text_source)
+        detailed_report_df, summary_df, predictions, artifacts = evaluate_text_source(train_df, test_df, text_source)
         comparison_tables.append(detailed_report_df)
         summary_tables.append(summary_df)
+
+        if text_source == 'preprocessed_text':
+            preprocessed_artifacts = artifacts
 
         for model_name, series in predictions.items():
             prediction_store[(text_source, model_name)] = series
@@ -473,6 +635,8 @@ def main() -> None:
 
     best_preprocessed_model = choose_best_model(summary_df, 'preprocessed_text')
     best_augmented_model = choose_best_model(summary_df, 'augmented_text')
+
+    evaluate_best_preprocessed_model_on_random_test(best_preprocessed_model, preprocessed_artifacts)
 
     test_dataset['preprocessed_text_prediction_model'] = best_preprocessed_model
     test_dataset['preprocessed_text_prediction_result'] = (
@@ -513,6 +677,10 @@ def main() -> None:
     print('Comparison image saved to:', COMPARISON_IMAGE_AUGMENTED_PATH)
     print('Excel workbook saved to:', EXCEL_OUTPUT_PATH)
     print('Test dataset results saved to:', test_dataset_path)
+    if os.path.exists(RANDOM_TEST_SUMMARY_PATH):
+        print('Random test best-model summary saved to:', RANDOM_TEST_SUMMARY_PATH)
+    if os.path.exists(RANDOM_TEST_PREDICTIONS_PATH):
+        print('Random test best-model predictions saved to:', RANDOM_TEST_PREDICTIONS_PATH)
 
 
 if __name__ == '__main__':
